@@ -4,4 +4,5 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-ternary = { path = "../ternary_machine/ternary" }
+ternary = { path = "../ternary_machine/ternary" , features = ["const_size"]}
+terscii = { path = "../ternary_machine/terscii" }

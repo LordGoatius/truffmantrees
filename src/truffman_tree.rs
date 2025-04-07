@@ -1,10 +1,11 @@
 use std::{
     collections::{BinaryHeap, HashMap, VecDeque},
     fs::File,
-    io::Read, usize,
+    io::Read,
+    usize,
 };
 
-use ternary::trits::Trit;
+use ternary::{trits::Trit, tryte::Tryte};
 
 use crate::triterator::Triterator;
 
@@ -12,17 +13,24 @@ use crate::triterator::Triterator;
 pub enum TruffmanTree<T> {
     None,
     Leaf(usize, T),
-    Node(Box<TruffmanTree<T>>, Box<TruffmanTree<T>>, Box<TruffmanTree<T>>),
+    Node(
+        Box<TruffmanTree<T>>,
+        Box<TruffmanTree<T>>,
+        Box<TruffmanTree<T>>,
+    ),
 }
 
 impl<T> TruffmanTree<T> {
-    pub fn create_file_tree(mut path: File) -> TruffmanTree<u8> {
-        let mut char_map: HashMap<u8, usize> = HashMap::new();
+    pub fn create_file_tree(mut path: File) -> TruffmanTree<Tryte> {
+        let mut char_map: HashMap<Tryte, usize> = HashMap::new();
         let mut u8_buff = Vec::new();
         path.read_to_end(&mut u8_buff).unwrap();
-        for byte in u8_buff.into_iter() {
-            let val = char_map.get(&byte).unwrap_or(&0);
-            char_map.insert(byte, val + 1);
+        for tryte in u8_buff
+            .into_iter()
+            .map(|char| <isize as Into<Tryte>>::into(char as isize))
+        {
+            let val = char_map.get(&tryte).unwrap_or(&0);
+            char_map.insert(tryte, val + 1);
         }
 
         let mut bin_heap = char_map
@@ -30,9 +38,8 @@ impl<T> TruffmanTree<T> {
             .map(|(char, count)| TruffmanTree::Leaf(count, char))
             .collect::<BinaryHeap<_>>(); //BinaryHeap::new();
 
-
         // We want 5 at the end. Each loop the heap takes 3 and turns it into one.
-        while bin_heap.len() % 3 != 2 {
+        while bin_heap.len() % 2 != 1 {
             bin_heap.push(TruffmanTree::None);
         }
 
@@ -41,9 +48,14 @@ impl<T> TruffmanTree<T> {
             let mid = bin_heap.pop().unwrap();
             let right = bin_heap.pop().unwrap();
 
-            bin_heap.push(TruffmanTree::Node(Box::new(left), Box::new(mid), Box::new(right)));
+            bin_heap.push(TruffmanTree::Node(
+                Box::new(left),
+                Box::new(mid),
+                Box::new(right),
+            ));
         }
 
+        debug_assert_eq!(bin_heap.len(), 1);
         bin_heap.pop().unwrap()
     }
 
@@ -55,7 +67,7 @@ impl<T> TruffmanTree<T> {
                 Trit::Zero => m.traverse(code),
                 Trit::POne => r.traverse(code),
             },
-            TruffmanTree::None => panic!()
+            TruffmanTree::None => panic!(),
         }
     }
 
@@ -67,7 +79,7 @@ impl<T> TruffmanTree<T> {
                 Trit::Zero => m.traverse_triterator(triterator),
                 Trit::POne => r.traverse_triterator(triterator),
             },
-            TruffmanTree::None => panic!()
+            TruffmanTree::None => panic!(),
         }
     }
 
@@ -78,14 +90,36 @@ impl<T> TruffmanTree<T> {
             TruffmanTree::None => 0,
         }
     }
+
+    pub fn kraft_mcmillan(&self) {
+        let mut data: Vec<usize> = Vec::new();
+
+        fn rec_int<V>(depth: usize, data: &mut Vec<usize>, curr: &TruffmanTree<V>) {
+            match curr {
+                TruffmanTree::None => return,
+                TruffmanTree::Leaf(_, _) => data.push(depth),
+                TruffmanTree::Node(l, m, r) => {
+                    rec_int(depth + 1, data, &l);
+                    rec_int(depth + 1, data, &m);
+                    rec_int(depth + 1, data, &r);
+                }
+            }
+        }
+
+        rec_int(0, &mut data, self);
+    }
 }
 
-impl TruffmanTree<u8> {
-    pub fn to_table(&self) -> HashMap<u8, Vec<Trit>> {
+impl TruffmanTree<Tryte> {
+    pub fn to_table(&self) -> HashMap<Tryte, Vec<Trit>> {
         let mut curr: Vec<Trit> = Vec::new();
         let mut table = Vec::new();
 
-        fn int_rec(tree: &TruffmanTree<u8>, curr: &mut Vec<Trit>, table: &mut Vec<(u8, Vec<Trit>)>) {
+        fn int_rec(
+            tree: &TruffmanTree<Tryte>,
+            curr: &mut Vec<Trit>,
+            table: &mut Vec<(Tryte, Vec<Trit>)>,
+        ) {
             match tree {
                 &TruffmanTree::Leaf(_, val) => {
                     table.push((val, curr.clone()));
@@ -94,9 +128,11 @@ impl TruffmanTree<u8> {
                     curr.push(Trit::NOne);
                     int_rec(l, curr, table);
                     curr.pop();
+
                     curr.push(Trit::Zero);
                     int_rec(m, curr, table);
                     curr.pop();
+
                     curr.push(Trit::POne);
                     int_rec(r, curr, table);
                     curr.pop();
@@ -110,13 +146,13 @@ impl TruffmanTree<u8> {
     }
 }
 
-impl PartialOrd for TruffmanTree<u8> {
+impl<T: PartialOrd> PartialOrd for TruffmanTree<T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         other.value().partial_cmp(&self.value())
     }
 }
 
-impl Ord for TruffmanTree<u8> {
+impl<T: Ord> Ord for TruffmanTree<T> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         other.value().cmp(&self.value())
     }
@@ -124,74 +160,99 @@ impl Ord for TruffmanTree<u8> {
 
 #[cfg(test)]
 pub mod tests {
-//     use std::{
-//         collections::{BinaryHeap, HashMap},
-//         fs::File,
-//         io::{Read, Write},
-//     };
-// 
-//     use crate::biterator::{Bit, Biterator};
-// 
-//     use super::TruffmanTree;
-// 
-    //#[test]
-    //fn bin_heap_tree() {
-    //    let mut char_map: HashMap<u8, usize> = HashMap::new();
-    //    let u8_buff: Vec<u8> = (0..=255).chain(0..=127).chain(64..=127).collect();
-    //    for byte in u8_buff.into_iter() {
-    //        let val = char_map.get(&byte).unwrap_or(&0);
-    //        char_map.insert(byte, val + 1);
-    //    }
+    use std::{
+        collections::{BinaryHeap, HashMap},
+        fs::File,
+        io::Read,
+    };
 
-    //    let mut bin_heap = char_map
-    //        .into_iter()
-    //        .map(|(char, count)| TruffmanTree::Leaf(count, char))
-    //        .collect::<BinaryHeap<_>>();
+    use ternary::{trits::Trit, tryte::Tryte};
 
-    //    bin_heap.push(TruffmanTree::Node(
-    //        Box::new(TruffmanTree::Leaf(2, 0)),
-    //        Box::new(TruffmanTree::Leaf(2, 2)),
-    //    ));
+    use crate::triterator::Triterator;
 
-    //    while let Some(i) = bin_heap.pop() {
-    //        eprintln!("{i:?}");
-    //    }
-    //}
+    use super::TruffmanTree;
 
-    //#[test]
-    //fn test_file_compression() {
-    //    let file = File::open("./testfile.txt").unwrap();
-    //    let tree = TruffmanTree::<u8>::create_file_tree(file);
-    //    let table = tree.to_table();
-    //    for (num, code) in table.iter() {
-    //        assert_eq!(num, tree.traverse(code.clone().into()))
-    //    }
+    #[test]
+    fn tern_bin_heap_tree() {
+        let mut char_map: HashMap<Tryte, usize> = HashMap::new();
+        let tryte_buff: Vec<Tryte> = (0isize..=255)
+            .chain(0..=127)
+            .chain(64..=127)
+            .map(|x| x.into())
+            .collect();
+        for tryte in tryte_buff.into_iter() {
+            let val = char_map.get(&tryte).unwrap_or(&0);
+            char_map.insert(tryte, val + 1);
+        }
 
-    //    let mut file = File::open("./testfile.txt").unwrap();
-    //    let mut compressed = File::create("./testfile.comp").unwrap();
-    //    let mut data = Vec::new();
-    //    file.read_to_end(&mut data).unwrap();
-    //    let compressed_data: Vec<Bit> = data.into_iter().map(|byte| table[&byte].clone()).flatten().collect();
+        let mut bin_heap = char_map
+            .into_iter()
+            .map(|(char, count)| TruffmanTree::Leaf(count, char))
+            .collect::<BinaryHeap<_>>();
 
-    //    let bytes: Vec<_> = compressed_data.chunks(8).map(|chunk| Bit::to_u8(chunk.to_vec())).collect();
-    //    compressed.write(&bytes).unwrap();
-    //    drop(compressed);
+        bin_heap.push(TruffmanTree::Node(
+            Box::new(TruffmanTree::None),
+            Box::new(TruffmanTree::Leaf(1, 4.into())),
+            Box::new(TruffmanTree::Leaf(1, 6.into())),
+        ));
 
-    //    let mut file = File::open("./testfile.txt").unwrap();
-    //    let mut compressed = File::open("./testfile.comp").unwrap();
-    //    let mut data = Vec::new();
-    //    let mut compressed_data = Vec::new();
-    //    file.read_to_end(&mut data).unwrap();
-    //    compressed.read_to_end(&mut compressed_data).unwrap();
-    //    let mut biterator = Biterator::new(compressed_data);
-    //    let mut decompressed = Vec::new();
-    //    while decompressed.len() < data.len() {
-    //        decompressed.push(*tree.traverse_biterator(&mut biterator));
-    //    }
+        while let Some(i) = bin_heap.pop() {
+            eprintln!("{i:?}");
+        }
+    }
 
-    //    assert_eq!(decompressed, data);
+    #[test]
+    fn tern_test_file_compression() {
+        let file = File::open("./testfile.txt").unwrap();
+        let tree = TruffmanTree::<Tryte>::create_file_tree(file);
+        let table = tree.to_table();
+        for (num, code) in table.iter() {
+            assert_eq!(num, tree.traverse(code.clone().into()))
+        }
 
-    //    eprintln!("{decompressed:?}");
-    //    eprintln!("{data:?}");
-    //}
+        let mut file = File::open("./testfile.txt").unwrap();
+        let mut data = Vec::new();
+        file.read_to_end(&mut data).unwrap();
+        let data_tryte: Vec<Tryte> = data
+            .iter()
+            .map(|byte| <isize as Into<Tryte>>::into(*byte as isize))
+            .collect();
+
+
+        let compressed_data: Vec<Trit> = data
+            .iter()
+            .map(|byte| table[&<isize as Into<Tryte>>::into(*byte as isize)].clone())
+            .flatten()
+            .collect();
+
+        let len_data = data_tryte.len() * 9;
+        let len_compressed = compressed_data.len();
+
+        assert!(len_data > len_compressed);
+        eprintln!("Data Length: {len_data}");
+        eprintln!("Compressed Length: {len_compressed}");
+
+        let compressed_data: Vec<Tryte> = compressed_data
+            .chunks(9)
+            .map(|chunk| {
+                if chunk.len() == 9 {
+                    return Tryte(chunk.try_into().unwrap());
+                } else {
+                    let mut tryte = [Trit::Zero; 9];
+                    for i in (0..chunk.len()).rev() {
+                        tryte[i] = chunk[i];
+                    }
+                    Tryte(tryte)
+                }
+            })
+            .collect();
+
+        let mut triterator = Triterator::new(compressed_data);
+        let mut decompressed = Vec::new();
+        while decompressed.len() < data.len() {
+            decompressed.push(*tree.traverse_triterator(&mut triterator));
+        }
+
+        assert_eq!(decompressed, data_tryte);
+    }
 }

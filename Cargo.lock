@@ -7,8 +7,24 @@ name = "huffman"
 version = "0.1.0"
 dependencies = [
  "ternary",
+ "terscii",
+]
+
+[[package]]
+name = "septivigntimal"
+version = "0.1.0"
+dependencies = [
+ "ternary",
 ]
 
 [[package]]
 name = "ternary"
 version = "0.1.0"
+
+[[package]]
+name = "terscii"
+version = "0.1.0"
+dependencies = [
+ "septivigntimal",
+ "ternary",
+]
