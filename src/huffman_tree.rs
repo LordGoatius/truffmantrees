@@ -111,6 +111,8 @@ pub mod tests {
         io::{Read, Write},
     };
 
+    use owo_colors::OwoColorize;
+
     use crate::biterator::{Bit, Biterator};
 
     use super::HuffmanTree;
@@ -164,6 +166,7 @@ pub mod tests {
         let mut compressed_data = Vec::new();
         file.read_to_end(&mut data).unwrap();
         compressed.read_to_end(&mut compressed_data).unwrap();
+        let len_compressed = compressed_data.len();
         let mut biterator = Biterator::new(compressed_data);
         let mut decompressed = Vec::new();
         while decompressed.len() < data.len() {
@@ -172,7 +175,15 @@ pub mod tests {
 
         assert_eq!(decompressed, data);
 
-        eprintln!("{decompressed:?}");
-        eprintln!("{data:?}");
+        let len_data = data.len();
+
+        eprintln!("Data Length (Bits): {}", (len_data * 8).yellow());
+        eprintln!("Compressed Length (Bits): {}", (len_compressed * 8).bright_red());
+        eprintln!();
+        eprintln!("Data Length (Bytes): {}", len_data.yellow());
+        eprintln!("Compressed Length (Bytes): {}", len_compressed.bright_red());
+        eprintln!();
+        eprintln!("Compression Ratio: {}", (len_compressed as f64 / len_data as f64).green());
+        eprintln!();
     }
 }

@@ -166,6 +166,7 @@ pub mod tests {
         io::Read,
     };
 
+    use owo_colors::OwoColorize;
     use ternary::{trits::Trit, tryte::Tryte};
 
     use crate::triterator::Triterator;
@@ -229,8 +230,6 @@ pub mod tests {
         let len_compressed = compressed_data.len();
 
         assert!(len_data > len_compressed);
-        eprintln!("Data Length: {len_data}");
-        eprintln!("Compressed Length: {len_compressed}");
 
         let compressed_data: Vec<Tryte> = compressed_data
             .chunks(9)
@@ -254,5 +253,14 @@ pub mod tests {
         }
 
         assert_eq!(decompressed, data_tryte);
+
+        eprintln!("Data Length (Trits): {}", len_data.yellow());
+        eprintln!("Compressed Length (Trits): {}", len_compressed.bright_red());
+        eprintln!();
+        eprintln!("Data Length (Trytes): {}", data.len().yellow());
+        eprintln!("Compressed Length (Trytes): {}", (len_compressed / 9).bright_red());
+        eprintln!();
+        eprintln!("Compression Ratio: {}", (len_compressed as f64 / len_data as f64).green());
+        eprintln!();
     }
 }
