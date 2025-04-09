@@ -1,6 +1,7 @@
 use std::{
     collections::{BinaryHeap, HashMap, VecDeque},
     fs::File,
+    hash::Hash,
     io::Read,
     usize,
 };
@@ -91,7 +92,7 @@ impl<T> TruffmanTree<T> {
         }
     }
 
-    pub fn kraft_mcmillan(&self) {
+    pub fn kraft_mcmillan(&self) -> f64 {
         let mut data: Vec<usize> = Vec::new();
 
         fn rec_int<V>(depth: usize, data: &mut Vec<usize>, curr: &TruffmanTree<V>) {
@@ -107,41 +108,45 @@ impl<T> TruffmanTree<T> {
         }
 
         rec_int(0, &mut data, self);
+
+        data.into_iter()
+            .map(|depth| f64::powi(3.0, -(depth as i32)))
+            .sum()
     }
 }
 
-impl TruffmanTree<Tryte> {
-    pub fn to_table(&self) -> HashMap<Tryte, Vec<Trit>> {
+impl<T: Hash + Clone + Eq> TruffmanTree<T> {
+    pub fn to_table(&self) -> HashMap<T, Vec<Trit>> {
         let mut curr: Vec<Trit> = Vec::new();
         let mut table = Vec::new();
 
-        fn int_rec(
-            tree: &TruffmanTree<Tryte>,
+        fn rec_int<V: Clone>(
+            tree: &TruffmanTree<V>,
             curr: &mut Vec<Trit>,
-            table: &mut Vec<(Tryte, Vec<Trit>)>,
+            table: &mut Vec<(V, Vec<Trit>)>,
         ) {
             match tree {
-                &TruffmanTree::Leaf(_, val) => {
-                    table.push((val, curr.clone()));
+                TruffmanTree::Leaf(_, val) => {
+                    table.push((val.clone(), curr.clone()));
                 }
                 TruffmanTree::Node(l, m, r) => {
                     curr.push(Trit::NOne);
-                    int_rec(l, curr, table);
+                    rec_int(l, curr, table);
                     curr.pop();
 
                     curr.push(Trit::Zero);
-                    int_rec(m, curr, table);
+                    rec_int(m, curr, table);
                     curr.pop();
 
                     curr.push(Trit::POne);
-                    int_rec(r, curr, table);
+                    rec_int(r, curr, table);
                     curr.pop();
                 }
                 TruffmanTree::None => return,
             }
         }
 
-        int_rec(&self, &mut curr, &mut table);
+        rec_int(&self, &mut curr, &mut table);
         table.into_iter().collect()
     }
 }
@@ -163,7 +168,7 @@ pub mod tests {
     use std::{
         collections::{BinaryHeap, HashMap},
         fs::File,
-        io::Read,
+        io::Read, path::Path,
     };
 
     use owo_colors::OwoColorize;
@@ -172,6 +177,15 @@ pub mod tests {
     use crate::triterator::Triterator;
 
     use super::TruffmanTree;
+
+    #[test]
+    fn kraft() {
+        let file = File::open("./testfile.txt").unwrap();
+        let tree = TruffmanTree::<Tryte>::create_file_tree(file);
+        let kraft = tree.kraft_mcmillan();
+        assert_eq!(1., kraft);
+        eprintln!("{}", kraft);
+    }
 
     #[test]
     fn tern_bin_heap_tree() {
@@ -219,6 +233,75 @@ pub mod tests {
             .map(|byte| <isize as Into<Tryte>>::into(*byte as isize))
             .collect();
 
+        let compressed_data: Vec<Trit> = data
+            .iter()
+            .map(|byte| table[&<isize as Into<Tryte>>::into(*byte as isize)].clone())
+            .flatten()
+            .collect();
+
+        let len_data = data_tryte.len() * 9;
+        let len_compressed = compressed_data.len();
+
+        assert!(len_data > len_compressed);
+
+        let compressed_data: Vec<Tryte> = compressed_data
+            .chunks(9)
+            .map(|chunk| {
+                if chunk.len() == 9 {
+                    return Tryte(chunk.try_into().unwrap());
+                } else {
+                    let mut tryte = [Trit::Zero; 9];
+                    for i in (0..chunk.len()).rev() {
+                        tryte[i] = chunk[i];
+                    }
+                    Tryte(tryte)
+                }
+            })
+            .collect();
+
+        let mut triterator = Triterator::new(compressed_data);
+        let mut decompressed = Vec::new();
+        while decompressed.len() < data.len() {
+            decompressed.push(*tree.traverse_triterator(&mut triterator));
+        }
+
+        assert_eq!(decompressed, data_tryte);
+
+        eprintln!("Kraft McMillan: {}", tree.kraft_mcmillan().blue());
+        eprintln!("Data Length (Trits): {}", len_data.yellow());
+        eprintln!("Compressed Length (Trits): {}", len_compressed.bright_red());
+        eprintln!();
+        eprintln!("Data Length (Trytes): {}", data.len().yellow());
+        eprintln!(
+            "Compressed Length (Trytes): {}",
+            (len_compressed / 9).bright_red()
+        );
+        eprintln!();
+        eprintln!(
+            "Compression Ratio: {}",
+            (len_compressed as f64 / len_data as f64).green()
+        );
+        eprintln!();
+    }
+
+    #[test]
+    fn tern_test_file_compression_2() {
+        let file_name = Path::new("./random.txt");
+
+        let file = File::open(file_name).unwrap();
+        let tree = TruffmanTree::<Tryte>::create_file_tree(file);
+        let table = tree.to_table();
+        for (num, code) in table.iter() {
+            assert_eq!(num, tree.traverse(code.clone().into()))
+        }
+
+        let mut file = File::open(file_name).unwrap();
+        let mut data = Vec::new();
+        file.read_to_end(&mut data).unwrap();
+        let data_tryte: Vec<Tryte> = data
+            .iter()
+            .map(|byte| <isize as Into<Tryte>>::into(*byte as isize))
+            .collect();
 
         let compressed_data: Vec<Trit> = data
             .iter()
@@ -254,13 +337,20 @@ pub mod tests {
 
         assert_eq!(decompressed, data_tryte);
 
+        eprintln!("Kraft McMillan: {}", tree.kraft_mcmillan().blue());
         eprintln!("Data Length (Trits): {}", len_data.yellow());
         eprintln!("Compressed Length (Trits): {}", len_compressed.bright_red());
         eprintln!();
         eprintln!("Data Length (Trytes): {}", data.len().yellow());
-        eprintln!("Compressed Length (Trytes): {}", (len_compressed / 9).bright_red());
+        eprintln!(
+            "Compressed Length (Trytes): {}",
+            (len_compressed / 9).bright_red()
+        );
         eprintln!();
-        eprintln!("Compression Ratio: {}", (len_compressed as f64 / len_data as f64).green());
+        eprintln!(
+            "Compression Ratio: {}",
+            (len_compressed as f64 / len_data as f64).green()
+        );
         eprintln!();
     }
 }

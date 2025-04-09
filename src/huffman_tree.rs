@@ -1,7 +1,5 @@
 use std::{
-    collections::{BinaryHeap, HashMap, VecDeque},
-    fs::File,
-    io::Read,
+    collections::{BinaryHeap, HashMap, VecDeque}, fs::File, hash::Hash, io::Read
 };
 
 use crate::biterator::{Bit, Biterator};
@@ -63,17 +61,35 @@ impl<T> HuffmanTree<T> {
             HuffmanTree::Node(l, r) => l.value() + r.value(),
         }
     }
+
+    pub fn kraft_mcmillan(&self) -> f64 {
+        let mut data: Vec<usize> = Vec::new();
+
+        fn rec_int<V>(depth: usize, data: &mut Vec<usize>, curr: &HuffmanTree<V>) {
+            match curr {
+                HuffmanTree::Leaf(_, _) => data.push(depth),
+                HuffmanTree::Node(l, r) => {
+                    rec_int(depth + 1, data, &l);
+                    rec_int(depth + 1, data, &r);
+                }
+            }
+        }
+
+        rec_int(0, &mut data, self);
+
+        data.into_iter().map(|depth| f64::powi(2.0, -(depth as i32))).sum()
+    }
 }
 
-impl HuffmanTree<u8> {
-    pub fn to_table(&self) -> HashMap<u8, Vec<Bit>> {
+impl<T: Hash + Clone + Eq> HuffmanTree<T> {
+    pub fn to_table(&self) -> HashMap<T, Vec<Bit>> {
         let mut curr: Vec<Bit> = Vec::new();
         let mut table = Vec::new();
 
-        fn int_rec(tree: &HuffmanTree<u8>, curr: &mut Vec<Bit>, table: &mut Vec<(u8, Vec<Bit>)>) {
+        fn int_rec<V: Clone>(tree: &HuffmanTree<V>, curr: &mut Vec<Bit>, table: &mut Vec<(V, Vec<Bit>)>) {
             match tree {
-                &HuffmanTree::Leaf(_, val) => {
-                    table.push((val, curr.clone()));
+                HuffmanTree::Leaf(_, val) => {
+                    table.push((val.clone(), curr.clone()));
                 }
                 HuffmanTree::Node(l, r) => {
                     curr.push(Bit::Zero);
@@ -108,7 +124,7 @@ pub mod tests {
     use std::{
         collections::{BinaryHeap, HashMap},
         fs::File,
-        io::{Read, Write},
+        io::{Read, Write}, path::Path,
     };
 
     use owo_colors::OwoColorize;
@@ -116,6 +132,15 @@ pub mod tests {
     use crate::biterator::{Bit, Biterator};
 
     use super::HuffmanTree;
+
+    #[test]
+    fn kraft() {
+        let file = File::open("./testfile.txt").unwrap();
+        let tree = HuffmanTree::<u8>::create_file_tree(file);
+        let kraft = tree.kraft_mcmillan();
+        assert_eq!(1., kraft);
+        eprintln!("{}", kraft);
+    }
 
     #[test]
     fn bin_heap_tree() {
@@ -177,6 +202,57 @@ pub mod tests {
 
         let len_data = data.len();
 
+        eprintln!("Kraft McMillan: {}", tree.kraft_mcmillan().blue());
+        eprintln!("Data Length (Bits): {}", (len_data * 8).yellow());
+        eprintln!("Compressed Length (Bits): {}", (len_compressed * 8).bright_red());
+        eprintln!();
+        eprintln!("Data Length (Bytes): {}", len_data.yellow());
+        eprintln!("Compressed Length (Bytes): {}", len_compressed.bright_red());
+        eprintln!();
+        eprintln!("Compression Ratio: {}", (len_compressed as f64 / len_data as f64).green());
+        eprintln!();
+    }
+
+    #[test]
+    fn test_file_compression_2() {
+        let file_name = Path::new("./random.txt");
+        let file_comp = Path::new("./random.comp");
+
+        let file = File::open(file_name).unwrap();
+        let tree = HuffmanTree::<u8>::create_file_tree(file);
+        let table = tree.to_table();
+        for (num, code) in table.iter() {
+            assert_eq!(num, tree.traverse(code.clone().into()))
+        }
+
+        let mut file = File::open(file_name).unwrap();
+        let mut compressed = File::create(file_comp).unwrap();
+        let mut data = Vec::new();
+        file.read_to_end(&mut data).unwrap();
+        let compressed_data: Vec<Bit> = data.into_iter().map(|byte| table[&byte].clone()).flatten().collect();
+
+        let bytes: Vec<_> = compressed_data.chunks(8).map(|chunk| Bit::to_u8(chunk.to_vec())).collect();
+        compressed.write(&bytes).unwrap();
+        drop(compressed);
+
+        let mut file = File::open(file_name).unwrap();
+        let mut compressed = File::open(file_comp).unwrap();
+        let mut data = Vec::new();
+        let mut compressed_data = Vec::new();
+        file.read_to_end(&mut data).unwrap();
+        compressed.read_to_end(&mut compressed_data).unwrap();
+        let len_compressed = compressed_data.len();
+        let mut biterator = Biterator::new(compressed_data);
+        let mut decompressed = Vec::new();
+        while decompressed.len() < data.len() {
+            decompressed.push(*tree.traverse_biterator(&mut biterator));
+        }
+
+        assert_eq!(decompressed, data);
+
+        let len_data = data.len();
+
+        eprintln!("Kraft McMillan: {}", tree.kraft_mcmillan().blue());
         eprintln!("Data Length (Bits): {}", (len_data * 8).yellow());
         eprintln!("Compressed Length (Bits): {}", (len_compressed * 8).bright_red());
         eprintln!();
