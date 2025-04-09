@@ -202,6 +202,15 @@ impl_bit_int_conversion!(i32);
 impl_bit_int_conversion!(i64);
 impl_bit_int_conversion!(isize);
 
+impl From<Bit> for char {
+    fn from(value: Bit) -> Self {
+        match value {
+            Bit::Zero => '0',
+            Bit::One  => '1',
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,5 +1,5 @@
 use std::{
-    collections::{BinaryHeap, HashMap, VecDeque}, fs::File, hash::Hash, io::Read
+    collections::{BinaryHeap, HashMap, VecDeque}, fmt::{Debug, Display}, fs::File, hash::Hash, io::Read, ops::Deref
 };
 
 use crate::biterator::{Bit, Biterator};
@@ -8,6 +8,17 @@ use crate::biterator::{Bit, Biterator};
 pub enum HuffmanTree<T> {
     Leaf(usize, T),
     Node(Box<HuffmanTree<T>>, Box<HuffmanTree<T>>),
+}
+
+#[derive(Debug, Clone)]
+pub struct HuffmanTable<T>(HashMap<T, Vec<Bit>>);
+
+impl<T> Deref for HuffmanTable<T> {
+    type Target = HashMap<T, Vec<Bit>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 impl<T> HuffmanTree<T> {
@@ -77,16 +88,22 @@ impl<T> HuffmanTree<T> {
 
         rec_int(0, &mut data, self);
 
-        data.into_iter().map(|depth| f64::powi(2.0, -(depth as i32))).sum()
+        data.into_iter()
+            .map(|depth| f64::powi(2.0, -(depth as i32)))
+            .sum()
     }
 }
 
 impl<T: Hash + Clone + Eq> HuffmanTree<T> {
-    pub fn to_table(&self) -> HashMap<T, Vec<Bit>> {
+    pub fn to_table(&self) -> HuffmanTable<T> {
         let mut curr: Vec<Bit> = Vec::new();
         let mut table = Vec::new();
 
-        fn int_rec<V: Clone>(tree: &HuffmanTree<V>, curr: &mut Vec<Bit>, table: &mut Vec<(V, Vec<Bit>)>) {
+        fn int_rec<V: Clone>(
+            tree: &HuffmanTree<V>,
+            curr: &mut Vec<Bit>,
+            table: &mut Vec<(V, Vec<Bit>)>,
+        ) {
             match tree {
                 HuffmanTree::Leaf(_, val) => {
                     table.push((val.clone(), curr.clone()));
@@ -103,9 +120,27 @@ impl<T: Hash + Clone + Eq> HuffmanTree<T> {
         }
 
         int_rec(&self, &mut curr, &mut table);
-        table.into_iter().collect()
+        HuffmanTable(table.into_iter().collect())
     }
 }
+
+impl<T: Display> Display for HuffmanTable<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Huffman Table:")?;
+        writeln!(f, "{: >11} | {}", "Symbol", "Code")?;
+        writeln!(f, "     -------|-----")?;
+        for (symbol, code) in self.iter() {
+            let code_string: String = code.iter().map(|bit| <Bit as Into<char>>::into(*bit)).collect();
+            writeln!(f, "{symbol: >11} | {code_string}")?
+        }
+
+        Ok(())
+    }
+}
+
+// impl<T> HuffmanTable<T> {
+//     pub fn 
+// }
 
 impl PartialOrd for HuffmanTree<u8> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
@@ -124,7 +159,8 @@ pub mod tests {
     use std::{
         collections::{BinaryHeap, HashMap},
         fs::File,
-        io::{Read, Write}, path::Path,
+        io::{Read, Write},
+        path::Path,
     };
 
     use owo_colors::OwoColorize;
@@ -132,6 +168,14 @@ pub mod tests {
     use crate::biterator::{Bit, Biterator};
 
     use super::HuffmanTree;
+
+    #[test]
+    fn test_tree_table_display() {
+        let file = File::open("./testfile.txt").unwrap();
+        let tree = HuffmanTree::<u8>::create_file_tree(file);
+        let table = tree.to_table();
+        eprintln!("{table}");
+    }
 
     #[test]
     fn kraft() {
@@ -179,9 +223,16 @@ pub mod tests {
         let mut compressed = File::create("./testfile.comp").unwrap();
         let mut data = Vec::new();
         file.read_to_end(&mut data).unwrap();
-        let compressed_data: Vec<Bit> = data.into_iter().map(|byte| table[&byte].clone()).flatten().collect();
+        let compressed_data: Vec<Bit> = data
+            .into_iter()
+            .map(|byte| table[&byte].clone())
+            .flatten()
+            .collect();
 
-        let bytes: Vec<_> = compressed_data.chunks(8).map(|chunk| Bit::to_u8(chunk.to_vec())).collect();
+        let bytes: Vec<_> = compressed_data
+            .chunks(8)
+            .map(|chunk| Bit::to_u8(chunk.to_vec()))
+            .collect();
         compressed.write(&bytes).unwrap();
         drop(compressed);
 
@@ -204,12 +255,18 @@ pub mod tests {
 
         eprintln!("Kraft McMillan: {}", tree.kraft_mcmillan().blue());
         eprintln!("Data Length (Bits): {}", (len_data * 8).yellow());
-        eprintln!("Compressed Length (Bits): {}", (len_compressed * 8).bright_red());
+        eprintln!(
+            "Compressed Length (Bits): {}",
+            (len_compressed * 8).bright_red()
+        );
         eprintln!();
         eprintln!("Data Length (Bytes): {}", len_data.yellow());
         eprintln!("Compressed Length (Bytes): {}", len_compressed.bright_red());
         eprintln!();
-        eprintln!("Compression Ratio: {}", (len_compressed as f64 / len_data as f64).green());
+        eprintln!(
+            "Compression Ratio: {}",
+            (len_compressed as f64 / len_data as f64).green()
+        );
         eprintln!();
     }
 
@@ -229,9 +286,16 @@ pub mod tests {
         let mut compressed = File::create(file_comp).unwrap();
         let mut data = Vec::new();
         file.read_to_end(&mut data).unwrap();
-        let compressed_data: Vec<Bit> = data.into_iter().map(|byte| table[&byte].clone()).flatten().collect();
+        let compressed_data: Vec<Bit> = data
+            .into_iter()
+            .map(|byte| table[&byte].clone())
+            .flatten()
+            .collect();
 
-        let bytes: Vec<_> = compressed_data.chunks(8).map(|chunk| Bit::to_u8(chunk.to_vec())).collect();
+        let bytes: Vec<_> = compressed_data
+            .chunks(8)
+            .map(|chunk| Bit::to_u8(chunk.to_vec()))
+            .collect();
         compressed.write(&bytes).unwrap();
         drop(compressed);
 
@@ -254,12 +318,18 @@ pub mod tests {
 
         eprintln!("Kraft McMillan: {}", tree.kraft_mcmillan().blue());
         eprintln!("Data Length (Bits): {}", (len_data * 8).yellow());
-        eprintln!("Compressed Length (Bits): {}", (len_compressed * 8).bright_red());
+        eprintln!(
+            "Compressed Length (Bits): {}",
+            (len_compressed * 8).bright_red()
+        );
         eprintln!();
         eprintln!("Data Length (Bytes): {}", len_data.yellow());
         eprintln!("Compressed Length (Bytes): {}", len_compressed.bright_red());
         eprintln!();
-        eprintln!("Compression Ratio: {}", (len_compressed as f64 / len_data as f64).green());
+        eprintln!(
+            "Compression Ratio: {}",
+            (len_compressed as f64 / len_data as f64).green()
+        );
         eprintln!();
     }
 }

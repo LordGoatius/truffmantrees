@@ -1,9 +1,5 @@
 use std::{
-    collections::{BinaryHeap, HashMap, VecDeque},
-    fs::File,
-    hash::Hash,
-    io::Read,
-    usize,
+    collections::{BinaryHeap, HashMap, VecDeque}, fmt::{Debug, Display}, fs::File, hash::Hash, io::Read, ops::Deref
 };
 
 use ternary::{trits::Trit, tryte::Tryte};
@@ -19,6 +15,17 @@ pub enum TruffmanTree<T> {
         Box<TruffmanTree<T>>,
         Box<TruffmanTree<T>>,
     ),
+}
+
+#[derive(Debug, Clone)]
+pub struct TruffmanTable<T>(HashMap<T, Vec<Trit>>);
+
+impl<T> Deref for TruffmanTable<T> {
+    type Target = HashMap<T, Vec<Trit>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 impl<T> TruffmanTree<T> {
@@ -116,7 +123,7 @@ impl<T> TruffmanTree<T> {
 }
 
 impl<T: Hash + Clone + Eq> TruffmanTree<T> {
-    pub fn to_table(&self) -> HashMap<T, Vec<Trit>> {
+    pub fn to_table(&self) -> TruffmanTable<T> {
         let mut curr: Vec<Trit> = Vec::new();
         let mut table = Vec::new();
 
@@ -147,7 +154,36 @@ impl<T: Hash + Clone + Eq> TruffmanTree<T> {
         }
 
         rec_int(&self, &mut curr, &mut table);
-        table.into_iter().collect()
+        TruffmanTable(table.into_iter().collect())
+    }
+}
+
+impl Display for TruffmanTable<Tryte> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Huffman Table:")?;
+        writeln!(f, "{: >12} | {}", "Symbol", "Code")?;
+        writeln!(f, "      -------|-----")?;
+        for (symbol, code) in self.iter() {
+            let symbol_string = format!("{:b}", symbol);
+            let code_string: String = code.iter().map(|trit| <Trit as Into<char>>::into(*trit)).collect();
+            writeln!(f, "{symbol_string: >12} | {code_string}")?
+        }
+
+        Ok(())
+    }
+}
+
+default impl<T: Display> Display for TruffmanTable<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Huffman Table:")?;
+        writeln!(f, "{: >12} | {}", "Symbol", "Code")?;
+        writeln!(f, "      -------|-----")?;
+        for (symbol, code) in self.iter() {
+            let code_string: String = code.iter().map(|trit| <Trit as Into<char>>::into(*trit)).collect();
+            writeln!(f, "{symbol: >12} | {code_string}")?
+        }
+
+        Ok(())
     }
 }
 
@@ -168,7 +204,8 @@ pub mod tests {
     use std::{
         collections::{BinaryHeap, HashMap},
         fs::File,
-        io::Read, path::Path,
+        io::Read,
+        path::Path,
     };
 
     use owo_colors::OwoColorize;
@@ -177,6 +214,14 @@ pub mod tests {
     use crate::triterator::Triterator;
 
     use super::TruffmanTree;
+
+    #[test]
+    fn tern_test_tree_table_display() {
+        let file = File::open("./testfile.txt").unwrap();
+        let tree = TruffmanTree::<Tryte>::create_file_tree(file);
+        let table = tree.to_table();
+        eprintln!("{table}");
+    }
 
     #[test]
     fn kraft() {
