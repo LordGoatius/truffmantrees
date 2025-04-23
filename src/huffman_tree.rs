@@ -1,6 +1,13 @@
 use std::{
-    collections::{BinaryHeap, HashMap, VecDeque}, fmt::{Debug, Display}, fs::File, hash::Hash, io::Read, ops::Deref
+    collections::{BinaryHeap, HashMap, VecDeque},
+    fmt::{Debug, Display},
+    fs::File,
+    hash::Hash,
+    io::Read,
+    ops::{Deref, DerefMut},
 };
+
+use itertools::{Either, Itertools};
 
 use crate::biterator::{Bit, Biterator};
 
@@ -11,7 +18,7 @@ pub enum HuffmanTree<T> {
 }
 
 #[derive(Debug, Clone)]
-pub struct HuffmanTable<T>(HashMap<T, Vec<Bit>>);
+pub struct HuffmanTable<T>(pub(super) HashMap<T, Vec<Bit>>);
 
 impl<T> Deref for HuffmanTable<T> {
     type Target = HashMap<T, Vec<Bit>>;
@@ -21,7 +28,55 @@ impl<T> Deref for HuffmanTable<T> {
     }
 }
 
-impl<T> HuffmanTree<T> {
+impl<T> DerefMut for HuffmanTable<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl<T: Clone> HuffmanTree<T> {
+    pub fn from(symbol_code_vec: HuffmanTable<T>) -> HuffmanTree<T> {
+        let scv = symbol_code_vec
+            .iter()
+            .filter_map(|val| {
+                if !val.1.is_empty() {
+                    Some((val.0.clone(), val.1.clone().into()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // We have determined it is valid, so we can use an infallible internal recursive
+        fn internal_create<T: Clone>(symbol_code_vec: Vec<(T, VecDeque<Bit>)>) -> HuffmanTree<T> {
+            let empty: Vec<_> = symbol_code_vec
+                .iter()
+                .filter_map(|s_c| if s_c.1.is_empty() { Some(s_c) } else { None })
+                .collect();
+
+            if empty.is_empty() {
+                let (left, right): (Vec<_>, Vec<_>) =
+                    symbol_code_vec.into_iter().partition_map(|mut s_c| {
+                        let check = s_c.1[0];
+                        s_c.1.pop_front();
+                        if check == Bit::Zero {
+                            Either::Left(s_c)
+                        } else {
+                            Either::Right(s_c)
+                        }
+                    });
+                HuffmanTree::Node(
+                    Box::new(internal_create(left)),
+                    Box::new(internal_create(right)),
+                )
+            } else {
+                HuffmanTree::Leaf(0, empty[0].0.clone())
+            }
+        }
+
+        internal_create(scv)
+    }
+
     pub fn create_file_tree(mut path: File) -> HuffmanTree<u8> {
         let mut char_map: HashMap<u8, usize> = HashMap::new();
         let mut u8_buff = Vec::new();
@@ -130,7 +185,10 @@ impl<T: Display> Display for HuffmanTable<T> {
         writeln!(f, "{: >11} | {}", "Symbol", "Code")?;
         writeln!(f, "     -------|-----")?;
         for (symbol, code) in self.iter() {
-            let code_string: String = code.iter().map(|bit| <Bit as Into<char>>::into(*bit)).collect();
+            let code_string: String = code
+                .iter()
+                .map(|bit| <Bit as Into<char>>::into(*bit))
+                .collect();
             writeln!(f, "{symbol: >11} | {code_string}")?
         }
 
@@ -138,9 +196,48 @@ impl<T: Display> Display for HuffmanTable<T> {
     }
 }
 
-// impl<T> HuffmanTable<T> {
-//     pub fn 
-// }
+impl<T> HuffmanTable<T> {
+    pub fn canonical(lens: &[u8]) -> Vec<Vec<Bit>> {
+        let mut codes: Vec<u16> = std::iter::repeat(0).take(lens.len()).collect::<Vec<_>>();
+        let max = *lens.iter().max().unwrap();
+
+        let histogram = &mut vec![0u16; max as usize + 1];
+        let next_code = &mut vec![0u16; max as usize + 1];
+        for i in lens {
+            histogram[*i as usize] += 1;
+        }
+
+        let mut code = 0;
+        histogram[0] = 0;
+
+        for i in 1..=max {
+            code = (code + histogram[i as usize - 1]) << 1;
+            next_code[i as usize] = code;
+        }
+
+        for n in 0..lens.len() {
+            let len = lens[n as usize];
+            if len != 0 {
+                codes[n as usize] = next_code[len as usize];
+                next_code[len as usize] += 1;
+            }
+        }
+
+        let codes: Vec<_> = codes
+            .into_iter()
+            .enumerate()
+            .map(|(i, code)| {
+                let mut bits: VecDeque<_> = vec![].into();
+                for j in 0..lens[i as usize] {
+                    let bit: Bit = ((code >> j) & 0b1).try_into().unwrap();
+                    bits.push_front(bit);
+                }
+                bits.into()
+            })
+            .collect();
+        codes
+    }
+}
 
 impl PartialOrd for HuffmanTree<u8> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
@@ -167,7 +264,15 @@ pub mod tests {
 
     use crate::biterator::{Bit, Biterator};
 
-    use super::HuffmanTree;
+    use super::{HuffmanTable, HuffmanTree};
+
+    #[test]
+    fn bin_canonical() {
+        let lens = [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 0];
+        let tbl = HuffmanTable::<u8>::canonical(&lens);
+        let tbl = HuffmanTable((1..).zip(tbl.into_iter()).collect());
+        eprintln!("{tbl}");
+    }
 
     #[test]
     fn test_tree_table_display() {

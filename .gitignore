@@ -1,2 +1,4 @@
 /target
 testfile*
+flamegraph.svg
+perf*

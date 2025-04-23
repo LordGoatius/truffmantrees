@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+itertools = "0.14.0"
 owo-colors = "4.2.0"
 ternary = { path = "../ternary_machine/ternary" , features = ["const_size"]}
 terscii = { path = "../ternary_machine/terscii" }

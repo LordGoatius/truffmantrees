@@ -1,8 +1,8 @@
 use std::{
-    collections::{BinaryHeap, HashMap, VecDeque}, fmt::{Debug, Display}, fs::File, hash::Hash, io::Read, ops::Deref
+    collections::{BTreeMap, BinaryHeap, HashMap, VecDeque}, fmt::{Debug, Display}, fs::File, hash::Hash, io::Read, ops::Deref
 };
 
-use ternary::{trits::Trit, tryte::Tryte};
+use ternary::{trits::Trit, tryte::{consts::TRYTE_MIN, Tryte}};
 
 use crate::triterator::Triterator;
 
@@ -18,10 +18,10 @@ pub enum TruffmanTree<T> {
 }
 
 #[derive(Debug, Clone)]
-pub struct TruffmanTable<T>(HashMap<T, Vec<Trit>>);
+pub struct TruffmanTable<T>(BTreeMap<T, Vec<Trit>>);
 
 impl<T> Deref for TruffmanTable<T> {
-    type Target = HashMap<T, Vec<Trit>>;
+    type Target = BTreeMap<T, Vec<Trit>>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -122,7 +122,7 @@ impl<T> TruffmanTree<T> {
     }
 }
 
-impl<T: Hash + Clone + Eq> TruffmanTree<T> {
+impl<T: Hash + Clone + Eq + Ord> TruffmanTree<T> {
     pub fn to_table(&self) -> TruffmanTable<T> {
         let mut curr: Vec<Trit> = Vec::new();
         let mut table = Vec::new();
@@ -173,8 +173,8 @@ impl Display for TruffmanTable<Tryte> {
     }
 }
 
-default impl<T: Display> Display for TruffmanTable<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<T: Display> Display for TruffmanTable<T> {
+    default fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Huffman Table:")?;
         writeln!(f, "{: >12} | {}", "Symbol", "Code")?;
         writeln!(f, "      -------|-----")?;
@@ -184,6 +184,51 @@ default impl<T: Display> Display for TruffmanTable<T> {
         }
 
         Ok(())
+    }
+}
+
+impl<T> TruffmanTable<T> {
+    pub fn canonical(lens: &[u8]) -> Vec<Vec<Trit>> {
+        let mut codes: Vec<Tryte> = std::iter::repeat(TRYTE_MIN).take(lens.len()).collect::<Vec<_>>();
+        let max = *lens.iter().max().unwrap();
+
+        let histogram = &mut vec![Tryte::default(); max as usize + 1];
+        let next_code = &mut vec![TRYTE_MIN; max as usize + 1];
+
+        for i in lens {
+            histogram[*i as usize] = (histogram[*i as usize] + Trit::POne).result;
+        }
+
+        let mut code = TRYTE_MIN;
+        histogram[0] = TRYTE_MIN;
+
+        for trits in 1..=max {
+            code = (((code + histogram[trits as usize - 1]).result << 1) + Trit::NOne).result;
+            next_code[trits as usize] = code;
+        }
+
+        for n in 0..lens.len() {
+            let len = lens[n as usize];
+            if len != 0 {
+                let next = next_code[len as usize];
+                codes[n as usize] = next;
+                next_code[len as usize] = (next + Trit::POne).result;
+            }
+        }
+
+        let codes: Vec<_> = codes
+            .into_iter()
+            .enumerate()
+            .map(|(i, code)| {
+                let mut bits: VecDeque<_> = vec![].into();
+                for j in 0..lens[i as usize] {
+                    let bit: Trit = ((code >> j as usize) & Trit::POne.into())[0];
+                    bits.push_front(bit);
+                }
+                bits.into()
+            })
+            .collect();
+        codes
     }
 }
 
@@ -202,7 +247,7 @@ impl<T: Ord> Ord for TruffmanTree<T> {
 #[cfg(test)]
 pub mod tests {
     use std::{
-        collections::{BinaryHeap, HashMap},
+        collections::{BTreeMap, BinaryHeap, HashMap},
         fs::File,
         io::Read,
         path::Path,
@@ -213,7 +258,22 @@ pub mod tests {
 
     use crate::triterator::Triterator;
 
-    use super::TruffmanTree;
+    use super::{TruffmanTable, TruffmanTree};
+
+    #[test]
+    fn tern_canonical() {
+        // let mut lens = [2; 11];
+        // lens[8] = 3;
+        // lens[9] = 3;
+        // lens[10] = 3;
+        let mut lens = [3; 29];
+        lens[26] = 4;
+        lens[27] = 4;
+        lens[28] = 4;
+        let tbl = TruffmanTable::<Tryte>::canonical(&lens);
+        let tbl = TruffmanTable((1..).zip(tbl.into_iter()).collect::<BTreeMap<u8, Vec<Trit>>>());
+        eprintln!("{tbl}");
+    }
 
     #[test]
     fn tern_test_tree_table_display() {
